@@ -1,8 +1,8 @@
-# cdp-python-backend-template
+# ai-rag-chatbot-backend
 
 This is work-in-progress. See [To Do List](./TODO.md)
 
-- [cdp-python-backend-template](#cdp-python-backend-template)
+- [ai-rag-chatbot-backend](#ai-rag-chatbot-backend)
   - [Requirements](#requirements)
     - [Python](#python)
     - [Linting and Formatting](#linting-and-formatting)
