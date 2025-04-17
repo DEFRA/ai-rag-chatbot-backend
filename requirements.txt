@@ -8,3 +8,15 @@ pymongo
 pymongo[aws,snappy,zstd,encryption]
 httpx
 uvicorn
+
+
+langchain-community
+tiktoken
+langchain-openai
+langchainhub
+chromadb
+langchain
+langgraph
+langchain-text-splitters
+beautifulsoup4
+openai

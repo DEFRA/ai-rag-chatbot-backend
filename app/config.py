@@ -14,5 +14,10 @@ class AppConfig(BaseSettings):
     enable_metrics: bool = False
     tracing_header: str = "x-cdp-request-id"
 
+    # AZURE
+    AZURE_OPENAI_API_KEY: Optional[str] = None
+    AZURE_OPENAI_ENDPOINT: Optional[str] = None
+    AZURE_API_VERSION: Optional[str] = None
+
 
 config = AppConfig()
