@@ -1,8 +1,8 @@
 from collections.abc import Sequence
 from typing import Annotated
 
-from langchain.graph.message import add_messages
 from langchain_core.messages import BaseMessage
+from langgraph.graph.message import add_messages
 from typing_extensions import TypedDict
 
 
