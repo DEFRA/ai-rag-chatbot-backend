@@ -39,7 +39,7 @@ retriever = vectorstore.as_retriever()
 # retriever tool
 retriever_tool = create_retriever_tool(
     retriever=retriever,
-    name="Web Retriever",
+    name="web_retriever",
     description="Search and return information about Lilian Weng blog posts on LLM agents, prompt engineering, and adversarial attacks on LLMs.",
 )
 tools = [retriever_tool]

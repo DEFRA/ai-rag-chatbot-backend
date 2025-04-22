@@ -13,9 +13,15 @@ from app.agentic_rag import AgentState
 from app.azure_openai_config import azure_gpt4, azure_gpt4o
 from app.data_ingest import retriever_tool, tools
 
+
+# Define the Grade class globally
+class Grade(BaseModel):
+    """Binary score for relevance check."""
+
+    binary_score: str = Field(description="Relevance score 'yes' or 'no'")
+
+
 ### Edges
-
-
 def grade_documents(state) -> Literal["generate", "rewrite"]:
     """
     Determines whether the retrieved documents are relevant to the question.
@@ -28,12 +34,6 @@ def grade_documents(state) -> Literal["generate", "rewrite"]:
     """
 
     print("---CHECK RELEVANCE---")
-
-    # Data model
-    class Grade(BaseModel):
-        """Binary score for relevance check."""
-
-        binary_score: str = Field(description="Relevance score 'yes' or 'no'")
 
     # LLM
     # model = ChatOpenAI(temperature=0, model="gpt-4o", streaming=True)
