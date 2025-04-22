@@ -1,3 +1,4 @@
+import json
 import pprint
 from typing import Literal
 
@@ -7,69 +8,77 @@ from langchain_core.output_parsers import StrOutputParser
 from langchain_core.prompts import PromptTemplate
 from langgraph.graph import END, START, StateGraph
 from langgraph.prebuilt import ToolNode, tools_condition
-from pydantic import BaseModel, Field
 
 from app.agentic_rag import AgentState
 from app.azure_openai_config import azure_gpt4, azure_gpt4o
 from app.data_ingest import retriever_tool, tools
 
 
-# Define the Grade class globally
-class Grade(BaseModel):
-    """Binary score for relevance check."""
-
-    binary_score: str = Field(description="Relevance score 'yes' or 'no'")
-
-
 ### Edges
 def grade_documents(state) -> Literal["generate", "rewrite"]:
     """
     Determines whether the retrieved documents are relevant to the question.
-
-    Args:
-        state (messages): The current state
-
-    Returns:
-        str: A decision for whether the documents are relevant or not
+    (Modified for testing without with_structured_output)
     """
+    print("---CHECK RELEVANCE (Manual JSON)---")
 
-    print("---CHECK RELEVANCE---")
+    model = azure_gpt4(
+        temperature=0, streaming=False
+    )  # Disable streaming for simpler invoke/parse
 
-    # LLM
-    # model = ChatOpenAI(temperature=0, model="gpt-4o", streaming=True)
-    model = azure_gpt4(temperature=0, streaming=True)
-
-    # LLM with tool and validation
-    llm_with_tool = model.with_structured_output(Grade)
-
-    # Prompt
+    # Modify prompt to explicitly ask for JSON output
     prompt = PromptTemplate(
-        template="""You are a grader assessing relevance of a retrieved document to a user question. \n
-        Here is the retrieved document: \n\n {context} \n\n
-        Here is the user question: {question} \n
-        If the document contains keyword(s) or semantic meaning related to the user question, grade it as relevant. \n
-        Give a binary score 'yes' or 'no' score to indicate whether the document is relevant to the question.""",
+        template="""You are a grader assessing relevance of a retrieved document to a user question.
+        Here is the retrieved document:
+        {context}
+
+        Here is the user question:
+        {question}
+
+        If the document contains keyword(s) or semantic meaning related to the user question, grade it as relevant.
+        Give a binary score 'yes' or 'no' score to indicate whether the document is relevant to the question.
+        Respond ONLY with a valid JSON object containing a single key "binary_score" with the value "yes" or "no".
+        Example: {{"binary_score": "yes"}}
+
+        JSON Response:""",
         input_variables=["context", "question"],
     )
 
-    # Chain
-    chain = prompt | llm_with_tool
+    # Simpler chain for raw output
+    chain = prompt | model | StrOutputParser()
 
     messages = state["messages"]
     last_message = messages[-1]
-
     question = messages[0].content
-    docs = last_message.content
+    docs = (
+        last_message.content
+    )  # Assuming docs is already a string or formatted correctly here
 
-    scored_result = chain.invoke({"question": question, "context": docs})
+    # Invoke the chain to get the raw string output
+    raw_json_output = chain.invoke({"question": question, "context": docs})
+    print(f"DEBUG: Raw output from grading model: {raw_json_output}")
 
-    score = scored_result.binary_score
+    score = "no"  # Default score
+    try:
+        # Attempt to parse the JSON string
+        parsed_output = json.loads(raw_json_output.strip())
+        if "binary_score" in parsed_output and parsed_output["binary_score"] in [
+            "yes",
+            "no",
+        ]:
+            score = parsed_output["binary_score"]
+        else:
+            print("WARN: JSON output missing 'binary_score' or invalid value.")
+    except json.JSONDecodeError:
+        print(f"ERROR: Failed to decode JSON from model output: {raw_json_output}")
+    except Exception as e:
+        print(f"ERROR: Unexpected error parsing JSON: {e}")
 
     if score == "yes":
         print("---DECISION: DOCS RELEVANT---")
         return "generate"
-    print("---DECISION: DOCS NOT RELEVANT---")
-    print(score)
+
+    print(f"---DECISION: DOCS NOT RELEVANT (Score: {score})---")
     return "rewrite"
 
 
