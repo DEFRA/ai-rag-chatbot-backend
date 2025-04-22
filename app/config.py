@@ -18,6 +18,14 @@ class AppConfig(BaseSettings):
     AZURE_OPENAI_API_KEY: Optional[str] = None
     AZURE_OPENAI_ENDPOINT: Optional[str] = None
     AZURE_API_VERSION: Optional[str] = None
+    AZURE_OPENAI_DEPLOYMENT_NAME: Optional[str] = None
+    AZURE_OPENAI_DEPLOYMENT_NAME_4o: Optional[str] = None
+
+    # LANGSMITH
+    LANGCHAIN_API_KEY: Optional[str] = None
+    LANGCHAIN_TRACING_V2: Optional[bool] = None
+    LANGSMITH_ENDPOINT: Optional[str] = None
+    LANGCHAIN_PROJECT: Optional[str] = None
 
 
 config = AppConfig()

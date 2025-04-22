@@ -156,6 +156,9 @@ docker compose watch
 
 The service will then run on `http://localhost:8085`
 
+Once the service is running if you want to run a specif file, just use this format: docker compose exec service python -m app.agentic_graph
+
+
 ### Testing
 
 Ensure the python virtual environment is configured and libraries are installed using `requirements-dev.txt`, [as above](#python)
