@@ -1,6 +1,6 @@
 from langchain_openai import AzureChatOpenAI
 
-from .config import config as configs
+from app.config import config as configs
 
 
 def azure_gpt4(temperature=0, streaming=True):

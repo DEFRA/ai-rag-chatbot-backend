@@ -9,18 +9,17 @@ from langchain_core.prompts import PromptTemplate
 from langgraph.graph import END, START, StateGraph
 from langgraph.prebuilt import ToolNode, tools_condition
 
-from app.agentic_rag import AgentState
-from app.azure_openai_config import azure_gpt4, azure_gpt4o
-from app.data_ingest import retriever_tool, tools
+from app.clients.azure_openai_config import azure_gpt4, azure_gpt4o
+from app.core.agents.agent_state import AgentState
+from app.core.agents.agent_tools import retriever_tool, tools
 
 
 ### Edges
-def grade_documents(state) -> Literal["generate", "rewrite"]:
+def check_document_relevance(state) -> Literal["generate", "rewrite"]:
     """
     Determines whether the retrieved documents are relevant to the question.
-    (Modified for testing without with_structured_output)
     """
-    print("---CHECK RELEVANCE (Manual JSON)---")
+    print("---CHECK RELEVANCE---")
 
     model = azure_gpt4(
         temperature=0, streaming=False
@@ -207,7 +206,7 @@ workflow.add_conditional_edges(
 workflow.add_conditional_edges(
     "retrieve",
     # Assess agent decision
-    grade_documents,
+    check_document_relevance,
 )
 workflow.add_edge("generate", END)
 workflow.add_edge("rewrite", "agent")
