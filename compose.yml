@@ -2,10 +2,10 @@ services:
   localstack:
     image: localstack/localstack:3.0.2
     ports:
-      - "4566:4566" # LocalStack Gateway
-      - "4510-4559:4510-4559" # external services port range
+      - "4566:4566"
+      - "4510-4559:4510-4559"
     env_file:
-      - "compose/aws.env"
+      - ./compose/aws.env
     environment:
       DEBUG: ${DEBUG:-1}
       LS_LOG: WARN # Localstack DEBUG Level
@@ -32,11 +32,12 @@ services:
       - mongodb-data:/data
     restart: always
 
-  ################################################################################
-
-  service:
+  ai-rag-chatbot-backend:
     build:
       context: .
+      target: development
+    image: ai-rag-chatbot-backend-development
+    container_name: ai-rag-chatbot-backend-development
     ports:
       - 8085:8085
     links:
@@ -48,16 +49,15 @@ services:
       mongodb:
         condition: service_started
     env_file:
-      - "compose/aws.env"
-      - "compose/secrets.env"
+      - ./compose/aws.env
     environment:
-      PORT: 8085
       LOCALSTACK_ENDPOINT: http://localstack:4566
       MONGO_URI: mongodb://mongodb:27017/
     develop:
       watch:
-        - action: rebuild
-          path: .
+        - action: sync
+          path: ./app
+          target: /home/python/app/app
           ignore:
             - README.md
             - "**/*.md"
@@ -77,11 +77,10 @@ services:
     networks:
       - cdp-tenant
 
-################################################################################
-
 volumes:
   mongodb-data:
 
 networks:
   cdp-tenant:
     driver: bridge
+
