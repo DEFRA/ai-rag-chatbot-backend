@@ -2,9 +2,10 @@ from langchain_community.document_loaders import WebBaseLoader
 from langchain_text_splitters import RecursiveCharacterTextSplitter
 
 urls = [
-    "https://lilianweng.github.io/posts/2023-06-23-agent/",
-    "https://lilianweng.github.io/posts/2023-03-15-prompt-engineering/",
-    "https://lilianweng.github.io/posts/2023-10-25-adv-attack-llm/",
+    "https://www.gov.uk/how-to-have-your-benefits-paid",
+    "https://www.gov.uk/how-to-claim-universal-credit",
+    "https://www.gov.uk/government/publications/universal-credit-and-rented-housing--2/universal-credit-and-rented-housing-guide-for-landlords",
+    "https://www.gov.uk/guidance/understanding-artificial-intelligence-ethics-and-safety",
 ]
 
 docs = [WebBaseLoader(url).load() for url in urls]
