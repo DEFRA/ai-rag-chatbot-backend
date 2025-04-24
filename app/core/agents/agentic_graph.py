@@ -8,7 +8,7 @@ from langchain_core.prompts import PromptTemplate
 from langgraph.graph import END, START, StateGraph
 from langgraph.prebuilt import ToolNode, tools_condition
 
-from app.clients.azure_openai_config import azure_gpt4, azure_gpt4o
+from app.clients.azure_openai_config import azure_gpt4o
 from app.core.agents.agent_state import AgentState
 from app.core.agents.agent_tools import retriever_tool, tools
 
@@ -20,7 +20,7 @@ def check_document_relevance(state) -> Literal["generate", "rewrite"]:
     """
     print("---CHECK RELEVANCE---")
 
-    model = azure_gpt4(
+    model = azure_gpt4o(
         temperature=0, streaming=False
     )  # Disable streaming for simpler invoke/parse
 
@@ -94,7 +94,7 @@ def agent(state):
     """
     print("---CALL AGENT---")
     messages = state["messages"]
-    model = azure_gpt4(temperature=0, streaming=True)
+    model = azure_gpt4o(temperature=0, streaming=False)
     model = model.bind_tools(tools)
     response = model.invoke(messages)
     # We return a list, because this will get added to the existing list
@@ -129,7 +129,7 @@ def rewrite(state):
     ]
 
     # Grader
-    model = azure_gpt4(temperature=0, streaming=True)
+    model = azure_gpt4o(temperature=0, streaming=False)
     response = model.invoke(msg)
     return {"messages": [response]}
 
@@ -155,7 +155,7 @@ def generate(state):
     prompt = hub.pull("rlm/rag-prompt")
 
     # LLM
-    llm = azure_gpt4o(temperature=0, streaming=True)
+    llm = azure_gpt4o(temperature=0, streaming=False)
 
     # Post-processing
     def format_docs(docs):
@@ -210,6 +210,13 @@ workflow.add_edge("rewrite", "agent")
 
 # Compile
 graph = workflow.compile()
+
+# create image of nodes
+image_data = graph.get_graph().draw_mermaid_png()
+output_filename = "agentic_graph.png"
+print(f"Saving graph to {output_filename}...")
+with open(output_filename, "wb") as f:
+    f.write(image_data)
 
 # create image of nodes
 # import pprint
