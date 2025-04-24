@@ -52,3 +52,4 @@ EXPOSE 8085
 
 # Run the application.
 CMD ["uvicorn", "app.main:app", "--host=0.0.0.0", "--log-config", "logging.json"]
+
