@@ -2,7 +2,7 @@ import json
 from typing import Literal
 
 from langchain import hub
-from langchain_core.messages import HumanMessage, ToolMessage
+from langchain_core.messages import AIMessage, HumanMessage, ToolMessage
 from langchain_core.output_parsers import StrOutputParser
 from langchain_core.prompts import PromptTemplate
 from langgraph.graph import END, START, StateGraph
@@ -95,35 +95,53 @@ def agent(state):
     model = model.bind_tools(tools)
 
     response = model.invoke([system_msg] + messages)
-
     tool_calls = response.additional_kwargs.get("tool_calls", [])
 
-    if tool_calls:
-        print(f"⚙️ Tool calls detected: {tool_calls}")
-        tool_messages = []
-        tool_response = None
+    # Prepare the list of new messages to add
+    new_messages_to_add = [response]  # Start with the LLM response
 
+    tool_response_docs = (
+        None  # Use a different name to avoid confusion with state['docs']
+    )
+    retrieval_attempted_in_node = False
+    should_generate_in_node = False
+
+    if tool_calls:
+        print(f"Tool calls detected: {tool_calls}")
+        tool_messages = []
         for tool_call in tool_calls:
             tool_name = tool_call["function"]["name"]
             tool_args = json.loads(tool_call["function"]["arguments"])
             tool_call_id = tool_call["id"]
 
             if tool_name == "gov_knowledge_base":
-                tool_response = retriever.invoke(tool_args["query"])
+                # Store the retrieved docs temporarily
+                tool_response_docs = retriever.invoke(tool_args["query"])
                 tool_messages.append(
                     ToolMessage(
-                        tool_call_id=tool_call_id, content="Retrieved documents."
+                        tool_call_id=tool_call_id,
+                        # Content can be a summary or confirmation
+                        content=f"Retrieved {len(tool_response_docs)} documents related to '{tool_args['query']}'.",
                     )
                 )
+                retrieval_attempted_in_node = True
+                should_generate_in_node = (
+                    True  # Assuming tool use means we should generate next
+                )
 
-        return {
-            "messages": [response] + tool_messages,
-            "docs": tool_response,
-            "retrieval_attempted": True,
-            "should_generate": True,
-        }
+        # Add the tool messages to the list of new messages
+        new_messages_to_add.extend(tool_messages)
 
-    return {"messages": [response]}
+    # Return only the new messages and other state updates
+    return_dict = {"messages": new_messages_to_add}
+    if tool_response_docs is not None:
+        return_dict["docs"] = tool_response_docs
+    if retrieval_attempted_in_node:
+        return_dict["retrieval_attempted"] = True  # Or update based on logic
+    if should_generate_in_node:
+        return_dict["should_generate"] = True  # Or update based on logic
+
+    return return_dict
 
 
 def retrieve_and_store(state):
@@ -185,7 +203,9 @@ def generate(state):
     response = rag_chain.invoke({"context": format_docs(docs), "question": question})
     cited_sources = collect_sources(docs)
     full_response = f"{response}\n\nSources:\n{cited_sources}"
-    return {"messages": [full_response]}
+
+    # Return the new message as an AIMessage object in a list
+    return {"messages": [AIMessage(content=full_response)]}
 
 
 # ========== BUILD GRAPH ===========
@@ -220,11 +240,11 @@ graph = workflow.compile()
 
 # Save mermaid diagram
 image_data = graph.get_graph().draw_mermaid_png()
-with open("agentic_graph.png", "wb") as f:
+with open("agentic_graph_new.png", "wb") as f:
     f.write(image_data)
 
 
-# # create image of nodes
+# create image of nodes
 # import pprint
 # inputs = {
 #     "messages": [
