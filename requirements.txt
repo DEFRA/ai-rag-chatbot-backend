@@ -20,3 +20,4 @@ langgraph
 langchain-text-splitters
 beautifulsoup4
 openai
+markitdown[all]

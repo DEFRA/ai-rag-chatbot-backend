@@ -1,7 +1,9 @@
 import json
+import os
 import time
 
 import httpx
+from markitdown.converters._html_converter import HtmlConverter
 
 # --- Configuration ---
 SEARCH_API_URL = "https://www.gov.uk/api/search.json"
@@ -9,13 +11,19 @@ CONTENT_API_BASE_URL = "https://www.gov.uk/api/content"  # Base URL for content 
 SEARCH_PARAMS = {
     "filter_format": "farming_grant",
     "fields": "link",  # Only fetch the link field from search results
-    "count": 500,  # Number of results to fetch (adjust as needed)
+    "count": 1,  # Number of results to fetch (adjust as needed)
 }
 
 # It's good practice to identify your script with a User-Agent
 HEADERS = {"User-Agent": "MyFarmingGrantFetcherScript/1.0 (stewart.jumbe@defra.gov.uk)"}
 # Add a small delay between content API calls to be polite to the server
 DELAY_BETWEEN_REQUESTS = 0.2  # seconds
+
+# Directory to save the output Markdown files
+MARKDOWN_OUTPUT_DIR = "farming_grants_markdown_files"
+
+# Instantiate HtmlConverter
+html_converter = HtmlConverter()
 
 
 # --- Main Logic ---
@@ -36,17 +44,16 @@ def fetch_farming_grant_content():
         )
         search_response.raise_for_status()  # Raise an exception for bad status codes (4xx or 5xx)
         search_data = search_response.json()  # Parse the JSON response
-        print(f" First item in search data: {search_response.json()}")
+        print(
+            f" First item in search data: {search_response.json().get('results', [])[0]}"
+        )
         results = search_data.get("results", [])
         print(
             f"Search successful. Found {len(results)} potential items (limit {SEARCH_PARAMS['count']})."
         )
-        print(
-            f"total number of results from search api is: {search_data['total']}"
-        )  # Print total number of results found
-        # You might want to check search_data['total'] to see if pagination is needed
+        print(f"total number of results from search api is: {search_data['total']}")
 
-    except httpx.exceptions.RequestException as e:
+    except httpx.RequestError as e:
         print(f"Error during search API request: {e}")
         return None  # Indicate failure
     except json.JSONDecodeError as e:
@@ -60,7 +67,7 @@ def fetch_farming_grant_content():
     if not results:
         print("No results found matching the criteria.")
         return []
-    print(f"results: {results}")
+    # print(f"results: {results}")
     return results
 
 
@@ -71,8 +78,6 @@ def fetch_content_for_items(results):
     Returns a list of dictionaries with the original link and the fetched content.
     """
     all_grant_data = []
-    print("\n--- Fetching content for each item ---")
-    print(f"\nFetching content for {len(results)} items...")
     # Iterate over each result and fetch its content
     for i, item in enumerate(results):
         link = item.get("link")
@@ -102,11 +107,11 @@ def fetch_content_for_items(results):
                     "content_url": content_url,
                     "content_data": content_data,  # This is the full JSON content for the item
                 }
-            )
+            )  # Append raw data first
             # Optional: Print a snippet for progress indication
             print(f"  -> Fetched title: {content_data.get('title', 'N/A')}")
 
-        except httpx.exceptions.HTTPError as e:
+        except httpx.HTTPStatusError as e:  # More specific exception for HTTP errors
             # Handle specific content fetch errors (e.g., 404 Not Found) gracefully
             print(
                 f"  -> Error fetching content for {link}: {e.response.status_code} {e.response.reason}"
@@ -116,10 +121,10 @@ def fetch_content_for_items(results):
                 {
                     "link": link,
                     "content_url": content_url,
-                    "error": f"HTTP Error: {e.response.status_code} {e.response.reason}",
+                    "error": f"HTTP Error: {e.response.status_code} {e.response.reason_phrase}",
                 }
             )
-        except httpx.exceptions.RequestException as e:
+        except httpx.RequestError as e:
             print(f"  -> Network error fetching content for {link}: {e}")
             all_grant_data.append(
                 {
@@ -145,25 +150,123 @@ def fetch_content_for_items(results):
     return all_grant_data
 
 
-# --- Execution ---
-if __name__ == "__main__":
-    fetched_data = fetch_content_for_items(results=fetch_farming_grant_content())
+def convert_grant_data_to_markdown(grant_item):
+    """
+    Converts the content_data of a single grant item into a Markdown string.
 
-    if fetched_data is not None:
-        print(f"\nSuccessfully processed {len(fetched_data)} items.")
+    Args:
+        grant_item (dict): A dictionary containing the fetched grant data,
+                           expected to have 'link' and 'content_data' keys.
 
-        # Example: Print titles of successfully fetched items and count errors
-        print("\n--- Summary ---")
-        successful_fetches = 0
+    Returns:
+        str: A Markdown formatted string representing the grant, or None if conversion fails.
+    """
+    if "error" in grant_item or "content_data" not in grant_item:
+        return None  # Cannot convert if there was an error or no data
+    print("#######grant_item:", grant_item)
+    content_data_value = grant_item.get("content_data", {})
+    print(f"#######content_data: {content_data_value}")
+    link = grant_item.get("link", "N/A")
+
+    # --- Extract and Convert relevant content to Markdown ---
+    title = content_data_value.get("title", "No Title")
+    description = content_data_value.get("description", "No Description")
+    details = content_data_value.get("details", {})
+    body_html = details.get("body", "")
+    change_history_list = details.get("change_history", [])
+
+    # Convert HTML body to Markdown
+    body_md = ""
+    if body_html:
+        try:
+            # Use the HtmlConverter directly with the HTML string
+            body_md_result = html_converter.convert_string(body_html)
+            body_md = (
+                body_md_result.text_content.strip()
+            )  # Strip leading/trailing whitespace
+        except Exception as md_err:
+            print(f"  -> Error converting body HTML to Markdown for {link}: {md_err}")
+            body_md = (
+                "Error during Markdown conversion."  # Or keep original HTML: body_html
+            )
+
+    # Format change history
+    change_history_md_parts = []
+    if change_history_list:
+        change_history_md_parts.append("\n## Change History")
+        for entry in change_history_list:
+            timestamp = entry.get("public_timestamp", "N/A")
+            note = entry.get("note", "N/A")
+            change_history_md_parts.append(f"*   **{timestamp}:** {note.strip()}")
+    change_history_md = "\n".join(change_history_md_parts)
+
+    # Assemble final markdown string
+    markdown_content = f"# {title}\n\n**URL:** https://www.gov.uk{link}\n\n## Description\n\n{description}\n\n## Details\n\n{body_md}"
+    if change_history_md:
+        markdown_content += f"\n{change_history_md}\n"
+    else:
+        markdown_content += (
+            "\n"  # Ensure a newline at the end even if no change history
+        )
+
+    return markdown_content
+
+
+def fetch_and_convert_grant_data():
+    """
+    Fetches farming grant data from GOV.UK and converts it to Markdown format.
+    Returns a list of dictionaries with the original link and the converted Markdown content.
+    """
+    # 1. Fetch search results
+    search_results = fetch_farming_grant_content()
+
+    if search_results:
+        # 2. Fetch content for each item
+        print("\n--- Fetching content for each item ---")
+        print(f"\nFetching content for {len(search_results)} items...")
+        fetched_data = fetch_content_for_items(results=search_results)
         failed_fetches = 0
+        successful_saves = 0
+        failed_fetches_or_conversions = 0
+
+        # Ensure the output directory exists
+        try:
+            os.makedirs(MARKDOWN_OUTPUT_DIR, exist_ok=True)
+            print(f"\nOutput directory set to: {MARKDOWN_OUTPUT_DIR}")
+        except OSError as e:
+            print(f"Error creating output directory {MARKDOWN_OUTPUT_DIR}: {e}")
+            # Optionally exit or handle this error differently
+            fetched_data = []  # Prevent further processing if directory fails
+
+        # Note: successful_fetches is initialized but not used below.
+        # 3. Convert fetched data to Markdown and save individual files
+        print("\n--- Converting content to Markdown ---")
+        print("\n--- Summary ---")
         for item in fetched_data:
-            if "content_data" in item and "error" not in item:
-                title = item["content_data"].get("title", "N/A")
-                print(f"- [SUCCESS] Link: {item['link']}, Title: {title}")
-                successful_fetches += 1
+            markdown_result = convert_grant_data_to_markdown(item)
+            if markdown_result:
+                # Create a safe filename from the link
+                # Replace leading '/' and subsequent '/' with '_'
+                safe_filename = item["link"].lstrip("/").replace("/", "_") + ".md"
+                output_filepath = os.path.join(MARKDOWN_OUTPUT_DIR, safe_filename)
+
+                try:
+                    with open(output_filepath, "w", encoding="utf-8") as f:
+                        f.write(markdown_result)
+                    print(f"- [SUCCESS] Saved: {output_filepath}")
+                    successful_saves += 1
+                except OSError as e:
+                    print(f"- [ FAILED] Error saving file {output_filepath}: {e}")
+                    failed_fetches_or_conversions += 1
+                except Exception as e:  # Catch other potential errors during file write
+                    print(
+                        f"- [ FAILED] Unexpected error saving file {output_filepath}: {e}"
+                    )
+                    failed_fetches_or_conversions += 1
+
             elif "error" in item:
                 print(f"- [ FAILED] Link: {item['link']}, Error: {item['error']}")
-                failed_fetches += 1
+                failed_fetches_or_conversions += 1
             else:
                 print(
                     f"- [UNKNOWN] Link: {item['link']}, No content or error recorded."
@@ -172,23 +275,11 @@ if __name__ == "__main__":
                     1  # Count as failed if no content and no specific error
                 )
 
-        print(f"\nTotal items processed: {len(fetched_data)}")
-        print(f"Successfully fetched content for: {successful_fetches} items.")
-        print(f"Failed/Errored items: {failed_fetches} items.")
+        return print(
+            f"\nTotal items processed: {len(fetched_data)}\nSuccessfully saved content for: {successful_saves} items\nFailed/Errored items: {failed_fetches_or_conversions} items."
+        )
+    return None
 
-        # You can now work with the 'fetched_data' list.
-        # Each element in the list is a dictionary.
-        # If successful, it has keys 'link', 'content_url', 'content_data'.
-        # If failed, it has keys 'link', 'content_url', 'error'.
-        # The 'content_data' value is the full JSON response from the Content API.
 
-        # Example: Save the full results to a JSON file
-        try:
-            output_filename = "farming_grants_content.json"
-            with open(output_filename, "w", encoding="utf-8") as f:
-                json.dump(fetched_data, f, indent=4, ensure_ascii=False)
-            print(f"\nSaved detailed results to {output_filename}")
-        except OSError as e:
-            print(f"\nError saving results to file: {e}")
-        except TypeError as e:
-            print(f"\nError preparing data for JSON saving: {e}")
+# running the file
+fetch_and_convert_grant_data()
