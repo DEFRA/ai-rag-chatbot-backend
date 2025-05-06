@@ -16,25 +16,24 @@ from app.core.rag.vector_store import retriever
 
 def debug_tools_condition(state):
     user_query = state["messages"][0].content.lower()
-    gov_keywords = [
-        "universal credit",
-        "benefits",
-        "housing",
-        "landlord",
-        "rented",
-        "government",
-        "ai ethics",
-        "artificial intelligence",
-        "government guidance",
-        "fairness",
-        "accountability",
-        "transparency",
+    # Updated keywords to be relevant to farming grants
+    farming_grant_keywords = [
+        "farm",
+        "farming",
+        "grant",
+        "grants",
+        "agriculture",
+        "agricultural",
+        "rural",
+        "defra",  # Department for Environment, Food & Rural Affairs
+        "funding",
+        "support scheme",
     ]
     result = tools_condition(state)
     print(f"TOOL CONDITION OUTPUT FROM LLM: {result}")
-    if any(keyword in user_query for keyword in gov_keywords):
+    if any(keyword in user_query for keyword in farming_grant_keywords):
         print(
-            "\U0001f50d Detected gov-related keyword and no retrieval yet — forcing retriever tool."
+            "\U0001f50d Detected farming grant-related keyword and no retrieval yet — forcing retriever tool."
         )
         return "tools"
     return result
@@ -82,12 +81,11 @@ def agent(state):
     print("---CALL AGENT---")
     messages = state["messages"]
     system_msg = HumanMessage(
-        content=(
-            "You are a helpful assistant. Use tools when relevant. "
-            "You MUST use the `gov_knowledge_base` tool for any question about UK government information "
-            "regarding Universal Credit, housing, benefit payments, or AI ethics and safety. "
-            "Do NOT attempt to answer on your own for these topics — use the tool."
-        ),
+        content="""You are a helpful assistant.
+You have access to a specialized knowledge base about UK farming grants.
+You MUST use the `gov_knowledge_base` tool for any question related to farming, farming grants, agricultural funding, rural support schemes, or similar topics.
+Do NOT attempt to answer on your own for these topics — always use the `gov_knowledge_base` tool to ensure accuracy based on the provided documents.
+For other general queries, you can answer directly or use other tools if appropriate.""",
         name="system",
     )
 
