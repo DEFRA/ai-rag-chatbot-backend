@@ -175,3 +175,6 @@ compose/secrets.env
 
 # VSCode settings
 .vscode/
+
+# Files generated during ingestions
+farming_grants_processed.json

@@ -90,8 +90,7 @@ def ingest_to_vectorstore(doc_splits):
     print(f"Adding {len(doc_splits)} document chunks to the vector store...")
     try:
         vector_store_grants.add_documents(doc_splits)
-        vector_store_grants.persist()  # Explicitly persist to save changes
-        print("Ingestion complete. Vector store persisted.")
+        print("Ingestion complete.Documents added to vector store (auto-persisted)")
     except Exception as e:
         print(f"An error occurred during vector store ingestion: {e}")
 

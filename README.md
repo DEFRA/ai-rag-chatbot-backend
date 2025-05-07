@@ -160,6 +160,42 @@ The service will then run on `http://localhost:8085`
 Once the service is running if you want to run a specif file, just use this format: docker compose exec backend-service python -m app.core.agents.agentic_graph
 *****
 
+### Running the RAG (Retrieval Augmented Generation) Pipeline
+
+To enable the chatbot to answer questions based on specific documents (e.g., farming grants), you need to populate its knowledge base (vector store). This involves two main steps:
+
+1.  **Download Grant Documents:**
+    This step fetches the latest grant information from the GOV.UK API, processes it into a structured JSON format.
+    Run the following command in your terminal:
+    ```bash
+    docker compose exec backend-service python -m app.core.rag.data_ingest_via_search_api_v3
+    ```
+    This will create a `farming_grants_processed.json` file inside the `/app` directory of your `backend-service` container.
+
+2.  **Ingest Documents into Vector Store:**
+    This step takes the JSON file generated above, chunks the documents, and loads them into the Chroma vector store, making them searchable by the agent.
+    Run the following command:
+    ```bash
+    docker compose exec backend-service python -m app.core.rag.ingest_markdown_docs
+    ```
+    This will populate the vector store located at `/app/chroma_db_grants` inside the container, which is mapped to `./persistent_chroma_db` on your host machine (as per your `compose.yml`).
+
+    **Note:** If you encounter issues with the vector store not being recognized after ingestion, try restarting the `backend-service` to ensure it loads the newly populated store:
+    ```bash
+    docker compose restart backend-service
+    ```
+
+3.  **Testing the RAG Functionality:**
+    Once the ingestion is complete and the `backend-service` is running, you can test the RAG capabilities by sending a POST request to the `/query` endpoint.
+    Example using `curl` (or any API client like Postman):
+    ```bash
+    curl -X POST http://localhost:8085/query \
+    -H "Content-Type: application/json" \
+    -d '{
+        "query": "could you tell me more about the eligibility criteria please, for the herbal leys"
+    }'
+    ```
+
 ### Testing
 
 Ensure the python virtual environment is configured and libraries are installed using `requirements-dev.txt`, [as above](#python)

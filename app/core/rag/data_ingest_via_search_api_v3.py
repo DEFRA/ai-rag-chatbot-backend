@@ -11,7 +11,7 @@ CONTENT_API_BASE_URL = "https://www.gov.uk/api/content"  # Base URL for content 
 SEARCH_PARAMS = {
     "filter_format": "farming_grant",
     "fields": "link",  # Only fetch the link field from search results
-    "count": 200,  # Number of results to fetch (adjust as needed)
+    "count": 2,  # Number of results to fetch (adjust as needed)
 }
 
 # It's good practice to identify your script with a User-Agent
@@ -301,6 +301,9 @@ def fully_ingest_data():
         # Use the correct counters for the conversion summary
         print(f"Successfully saved content for: {successful_processing} items.")
         print(f"Failed/Errored items: {failed_fetches_or_conversions} items.")
+
+        # Ensure the processed documents are saved to the JSON file
+        save_markdown_in_json_file(processed_docs)
 
 
 fully_ingest_data()
