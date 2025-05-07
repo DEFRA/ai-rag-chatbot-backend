@@ -20,6 +20,9 @@ langgraph
 langchain-text-splitters
 beautifulsoup4
 openai
+<<<<<<< HEAD
 langchain-chroma
 
+=======
+>>>>>>> 72f4b121b9842f6deba9e61bc17d1b510e2d0d46
 markitdown[all]
