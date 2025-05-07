@@ -1,5 +1,4 @@
 import json
-import os
 import time
 
 import httpx
@@ -18,9 +17,6 @@ SEARCH_PARAMS = {
 HEADERS = {"User-Agent": "MyFarmingGrantFetcherScript/1.0 (stewart.jumbe@defra.gov.uk)"}
 # Add a small delay between content API calls to be polite to the server
 DELAY_BETWEEN_REQUESTS = 0.2  # seconds
-
-# Directory to save the output Markdown files
-MARKDOWN_OUTPUT_DIR = "farming_grants_markdown_files"
 
 # Instantiate HtmlConverter
 html_converter = HtmlConverter()
@@ -265,15 +261,6 @@ def fetch_and_convert_grant_data():
         processed_docs = []
         successful_processing = 0
         failed_fetches_or_conversions = 0
-
-        # Ensure the output directory exists
-        try:
-            os.makedirs(MARKDOWN_OUTPUT_DIR, exist_ok=True)
-            print(f"\nOutput directory set to: {MARKDOWN_OUTPUT_DIR}")
-        except OSError as e:
-            print(f"Error creating output directory {MARKDOWN_OUTPUT_DIR}: {e}")
-            # Optionally exit or handle this error differently
-            fetched_data = []  # Prevent further processing if directory fails
 
         # Note: successful_fetches is initialized but not used below.
         # 3. Convert fetched data to Markdown and save individual files
