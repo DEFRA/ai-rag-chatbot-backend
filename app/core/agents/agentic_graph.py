@@ -16,7 +16,6 @@ from app.core.rag.vector_store import retriever
 
 def debug_tools_condition(state):
     user_query = state["messages"][0].content.lower()
-    # Updated keywords to be relevant to farming grants
     farming_grant_keywords = [
         "farm",
         "farming",
@@ -25,7 +24,7 @@ def debug_tools_condition(state):
         "agriculture",
         "agricultural",
         "rural",
-        "defra",  # Department for Environment, Food & Rural Affairs
+        "defra",
         "funding",
         "support scheme",
     ]
@@ -33,7 +32,7 @@ def debug_tools_condition(state):
     print(f"TOOL CONDITION OUTPUT FROM LLM: {result}")
     if any(keyword in user_query for keyword in farming_grant_keywords):
         print(
-            "\U0001f50d Detected farming grant-related keyword and no retrieval yet — forcing retriever tool."
+            "Detected farming grant-related keyword and no retrieval yet — forcing retriever tool."
         )
         return "tools"
     return result

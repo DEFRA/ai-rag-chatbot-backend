@@ -10,7 +10,7 @@ CONTENT_API_BASE_URL = "https://www.gov.uk/api/content"  # Base URL for content 
 SEARCH_PARAMS = {
     "filter_format": "farming_grant",
     "fields": "link",  # Only fetch the link field from search results
-    "count": 1,  # Number of results to fetch (adjust as needed)
+    "count": 500,  # Number of results to fetch (adjust as needed)
 }
 
 # It's good practice to identify your script with a User-Agent

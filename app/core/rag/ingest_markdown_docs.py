@@ -1,4 +1,5 @@
 import json
+import time
 
 from langchain.schema.document import Document
 from langchain_text_splitters import RecursiveCharacterTextSplitter
@@ -69,8 +70,8 @@ def split_documents(documents):
     return doc_splits
 
 
-def ingest_to_vectorstore(doc_splits):
-    """Adds document splits to the pre-configured grants vector store."""
+def ingest_to_vectorstore(doc_splits, batch_size=50, max_retries=3, backoff=60):
+    """Adds document splits to the pre-configured grants vector store with retry logic."""
     if not doc_splits:
         print("No document splits to ingest.")
         return
@@ -89,8 +90,31 @@ def ingest_to_vectorstore(doc_splits):
 
     print(f"Adding {len(doc_splits)} document chunks to the vector store...")
     try:
-        vector_store_grants.add_documents(doc_splits)
-        print("Ingestion complete.Documents added to vector store (auto-persisted)")
+        for i in range(0, len(doc_splits), batch_size):
+            batch = doc_splits[i : i + batch_size]
+            retries = 0
+            while retries <= max_retries:
+                try:
+                    vector_store_grants.add_documents(batch)
+                    print(
+                        f"Added batch {i // batch_size + 1} /{-(-len(doc_splits) // batch_size)} to vector store."
+                    )
+                    break  # Exit retry loop if successful
+                except Exception as e:
+                    if "429" in str(e):
+                        retries += 1
+                        print(
+                            f"Rate limit hit. Retrying batch {i // batch_size + 1} in {backoff} seconds... (Attempt {retries}/{max_retries})"
+                        )
+                        time.sleep(backoff)
+                        backoff *= 2  # Exponential backoff
+                    else:
+                        raise e
+            else:
+                print(
+                    f"Failed to add batch {i // batch_size + 1} after {max_retries} retries. Skipping..."
+                )
+        print("Ingestion complete. Documents added to vector store (auto-persisted)")
     except Exception as e:
         print(f"An error occurred during vector store ingestion: {e}")
 

@@ -168,7 +168,7 @@ To enable the chatbot to answer questions based on specific documents (e.g., far
     This step fetches the latest grant information from the GOV.UK API, processes it into a structured JSON format.
     Run the following command in your terminal:
     ```bash
-    docker compose exec backend-service python -m app.core.rag.data_ingest_via_search_api_v3
+    docker compose exec backend-service python -m app.core.rag.download_farming_grants
     ```
     This will create a `farming_grants_processed.json` file inside the `/app` directory of your `backend-service` container.
 
