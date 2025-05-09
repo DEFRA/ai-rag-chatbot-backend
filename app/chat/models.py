@@ -4,7 +4,8 @@ from pydantic import BaseModel
 class QueryRequest(BaseModel):
     """Request model for the query endpoint."""
 
-    query: str  # Changed from 'question' to 'query' as per endpoint name
+    query: str
+    user_id: str = "default_user"  # Optional, defaults to 'default_user'
 
 
 class QueryResponse(BaseModel):

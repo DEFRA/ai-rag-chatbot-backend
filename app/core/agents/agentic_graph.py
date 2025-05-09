@@ -5,6 +5,7 @@ from langchain import hub
 from langchain_core.messages import AIMessage, HumanMessage, ToolMessage
 from langchain_core.output_parsers import StrOutputParser
 from langchain_core.prompts import PromptTemplate
+from langgraph.checkpoint.memory import MemorySaver
 from langgraph.graph import END, START, StateGraph
 from langgraph.prebuilt import tools_condition
 
@@ -15,7 +16,20 @@ from app.core.rag.vector_store import retriever
 
 
 def debug_tools_condition(state):
-    user_query = state["messages"][0].content.lower()
+    # Find the most recent user query
+    messages = state["messages"]
+    user_query = None
+
+    # Look for the most recent HumanMessage
+    for msg in reversed(messages):
+        if isinstance(msg, HumanMessage):
+            user_query = msg.content.lower()
+            break
+
+    # Fallback to the first message if no HumanMessage was found
+    if user_query is None and messages:
+        user_query = messages[0].content.lower()
+
     farming_grant_keywords = [
         "farm",
         "farming",
@@ -59,7 +73,18 @@ def check_document_relevance(state) -> Literal["generate", "rewrite"]:
 
     messages = state["messages"]
     last_message = messages[-1]
-    question = messages[0].content
+
+    # Find the most recent user query - look through messages in reverse
+    question = None
+    for msg in reversed(messages):
+        if isinstance(msg, HumanMessage):
+            question = msg.content
+            break
+
+    # Fallback to first message if no HumanMessage found
+    if question is None and messages:
+        question = messages[0].content
+
     docs = last_message.content
 
     raw_output = chain.invoke({"question": question, "context": docs})
@@ -84,7 +109,9 @@ def agent(state):
 You have access to a specialized knowledge base about UK farming grants.
 You MUST use the `gov_knowledge_base` tool for any question related to farming, farming grants, agricultural funding, rural support schemes, or similar topics.
 Do NOT attempt to answer on your own for these topics — always use the `gov_knowledge_base` tool to ensure accuracy based on the provided documents.
-For other general queries, you can answer directly or use other tools if appropriate.""",
+For other general queries, you can answer directly or use other tools if appropriate.
+
+You should remember and use all information the user shares with you during the conversation, including their name, preferences, goals, and any facts or context discussed. If the user asks you to recall or summarize what has been discussed so far, look back through the conversation and answer accordingly.""",
         name="system",
     )
 
@@ -157,7 +184,17 @@ def retrieve_and_store(state):
 def rewrite(state):
     print("---TRANSFORM QUERY---")
     messages = state["messages"]
-    question = messages[0].content
+
+    # Find the most recent user query
+    question = None
+    for msg in reversed(messages):
+        if isinstance(msg, HumanMessage):
+            question = msg.content
+            break
+
+    # Fallback to the first message if no human message found
+    if question is None and messages:
+        question = messages[0].content
 
     msg = [
         HumanMessage(
@@ -178,7 +215,20 @@ def rewrite(state):
 
 def generate(state):
     print("---GENERATE---")
-    question = state["messages"][0].content
+    # Use the most recent user message as the question instead of always the first message
+    messages = state["messages"]
+
+    # Find the most recent user query - it's generally the last HumanMessage
+    question = None
+    for msg in reversed(messages):
+        if isinstance(msg, HumanMessage):
+            question = msg.content
+            break
+
+    # Fallback to the first message if we couldn't find a HumanMessage
+    if question is None and messages:
+        question = messages[0].content
+
     docs = state.get("docs", [])
 
     def format_docs(docs):
@@ -232,8 +282,48 @@ workflow.add_conditional_edges(
 workflow.add_edge("generate", END)
 workflow.add_edge("rewrite", "agent")
 
-# Compile graph
-graph = workflow.compile()
+# --- MemorySaver integration ---
+# Initialize MemorySaver (default: in-memory storage)
+memory = MemorySaver()
+
+# Compile graph with memory checkpointer
+graph = workflow.compile(checkpointer=memory)
+
+
+def run_graph_with_memory(user_id: str, user_query: str):
+    """
+    Runs the graph with memory persistence for the given user.
+
+    The checkpointer (MemorySaver) automatically handles loading prior state
+    and saving the new state after execution.
+    """
+    from langchain_core.messages import HumanMessage
+
+    # Prepare the config with thread_id for memory persistence
+    config = {"configurable": {"thread_id": user_id}}
+
+    # Get current state from memory, if any exists
+    current_state = graph.get_state(config=config)
+
+    # If no state exists, initialize with just the new query
+    if not current_state or "messages" not in current_state:
+        print(f"No existing state found for user {user_id}, creating fresh state")
+        initial_state = {"messages": [HumanMessage(content=user_query)]}
+    else:
+        # Otherwise, append the new message to existing conversation history
+        print(
+            f"Found existing state for user {user_id} with {len(current_state.get('messages', []))} messages"
+        )
+        # Create a copy to avoid modifying the original
+        initial_state = dict(current_state)
+        # Add the new user message to existing conversation
+        initial_state["messages"] = list(initial_state["messages"]) + [
+            HumanMessage(content=user_query)
+        ]
+
+    # Invoke the graph - memory handling is automatic with the checkpointer
+    return graph.invoke(initial_state, config)
+
 
 # Save mermaid diagram
 image_data = graph.get_graph().draw_mermaid_png()

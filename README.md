@@ -265,3 +265,36 @@ information providers in the public sector to license the use and re-use of thei
 licence.
 
 It is designed to encourage use and re-use of information freely and flexibly, with only a few conditions.
+
+# AI RAG Chatbot Backend
+
+## Persistent Memory Feature
+
+This backend now supports **persistent conversational memory** using LangGraph's `MemorySaver`.
+The agent can recall previous user messages and context across multiple turns and sessions.
+
+### How It Works
+
+- Each user/session is assigned a unique memory stream (by `user_id`).
+- The agent loads conversation history from memory before processing a new query.
+- After responding, the updated state is saved back to memory.
+- This enables multi-turn, context-aware conversations.
+
+### Usage
+
+- By default, the API uses `"default_user"` as the session key.
+- For real applications, pass a unique user/session ID to enable per-user memory.
+
+### Relevant Code
+
+- `app/core/agents/agentic_graph.py`:
+  Integrates `MemorySaver` and provides `run_graph_with_memory`.
+- `app/chat/router.py`:
+  API layer updated to use persistent memory for each user/session.
+
+---
+
+**To enable per-user memory:**
+Update the API to extract and pass a real user/session ID instead of `"default_user"`.
+
+---
