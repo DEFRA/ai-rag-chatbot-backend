@@ -17,16 +17,12 @@ from app.core.rag.vector_store import retriever
 
 def debug_tools_condition(state):
     # Find the most recent user query
-    messages = state["messages"]
     user_query = None
-
-    # Look for the most recent HumanMessage
+    messages = state["messages"]
     for msg in reversed(messages):
         if isinstance(msg, HumanMessage):
             user_query = msg.content.lower()
             break
-
-    # Fallback to the first message if no HumanMessage was found
     if user_query is None and messages:
         user_query = messages[0].content.lower()
 
@@ -42,13 +38,38 @@ def debug_tools_condition(state):
         "funding",
         "support scheme",
     ]
-    result = tools_condition(state)
-    print(f"TOOL CONDITION OUTPUT FROM LLM: {result}")
-    if any(keyword in user_query for keyword in farming_grant_keywords):
+    question_starters = [
+        "what",
+        "how",
+        "which",
+        "when",
+        "where",
+        "who",
+        "does",
+        "do",
+        "can",
+        "is",
+        "are",
+        "should",
+        "could",
+        "would",
+    ]
+
+    # Check if it's a question
+    is_question = user_query.strip().endswith("?") or any(
+        user_query.strip().startswith(qs + " ") for qs in question_starters
+    )
+
+    # Only trigger retrieval if BOTH a keyword and a question are present
+    if is_question and any(keyword in user_query for keyword in farming_grant_keywords):
         print(
-            "Detected farming grant-related keyword and no retrieval yet — forcing retriever tool."
+            "Detected farming grant-related keyword in a question — forcing retriever tool."
         )
         return "tools"
+
+    # Otherwise, use the LLM's own tool condition logic
+    result = tools_condition(state)
+    print(f"TOOL CONDITION OUTPUT FROM LLM: {result}")
     return result
 
 
