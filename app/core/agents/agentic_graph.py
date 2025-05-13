@@ -1,8 +1,7 @@
 import json
 from typing import Literal
 
-from langchain import hub
-from langchain_core.messages import AIMessage, HumanMessage, ToolMessage
+from langchain_core.messages import AIMessage, HumanMessage, SystemMessage, ToolMessage
 from langchain_core.output_parsers import StrOutputParser
 from langchain_core.prompts import PromptTemplate
 from langgraph.checkpoint.memory import MemorySaver
@@ -13,6 +12,7 @@ from app.clients.azure_openai_config import azure_gpt4o
 from app.core.agents.agent_state import AgentState
 from app.core.agents.agent_tools import tools
 from app.core.rag.vector_store import retriever
+from app.util.prompts import base_prompt
 
 
 def debug_tools_condition(state):
@@ -57,7 +57,7 @@ def debug_tools_condition(state):
 
     # Check if it's a question
     is_question = user_query.strip().endswith("?") or any(
-        user_query.strip().startswith(qs + " ") for qs in question_starters
+        user_query.strip().startsWith(qs + " ") for qs in question_starters
     )
 
     # Only trigger retrieval if BOTH a keyword and a question are present
@@ -122,6 +122,44 @@ def check_document_relevance(state) -> Literal["generate", "rewrite"]:
     return "rewrite"
 
 
+# Utility: Limit conversation history for LLM context window
+MAX_CONTEXT_MESSAGES = 10  # Adjust as needed for your LLM's context window
+
+# Summarize older messages if conversation is too long
+
+
+def get_recent_messages(messages, max_messages=MAX_CONTEXT_MESSAGES):
+    """
+    Returns the most recent max_messages from the conversation history.
+    If there are more messages, older ones are summarized into a single message.
+    """
+    if len(messages) <= max_messages:
+        return messages
+    # Summarize older messages
+    older_messages = messages[:-max_messages]
+    recent_messages = messages[-max_messages:]
+
+    # Prepare a summary prompt
+    summary_prompt = PromptTemplate(
+        template="""
+You are an assistant helping to summarize a conversation for context recall. Summarize the following conversation history in a concise way, preserving key facts, user preferences, and important context. Do not invent information.
+
+Conversation history:
+{history}
+
+Summary:""",
+        input_variables=["history"],
+    )
+    # Format the older messages as a string
+    history_text = "\n".join(f"{msg.type}: {msg.content}" for msg in older_messages)
+    model = azure_gpt4o(temperature=0, streaming=False)
+    chain = summary_prompt | model | StrOutputParser()
+    summary = chain.invoke({"history": history_text})
+    # Return a SystemMessage with the summary, plus the recent messages
+    summary_message = SystemMessage(content=f"Conversation summary: {summary}")
+    return [summary_message] + recent_messages
+
+
 def agent(state):
     print("---CALL AGENT---")
     messages = state["messages"]
@@ -136,10 +174,13 @@ You should remember and use all information the user shares with you during the 
         name="system",
     )
 
+    # Use only the most recent messages for LLM context
+    recent_messages = get_recent_messages(messages)
+
     model = azure_gpt4o(temperature=0, streaming=False)
     model = model.bind_tools(tools)
 
-    response = model.invoke([system_msg] + messages)
+    response = model.invoke([system_msg] + recent_messages)
     tool_calls = response.additional_kwargs.get("tool_calls", [])
 
     # Prepare the list of new messages to add
@@ -205,10 +246,12 @@ def retrieve_and_store(state):
 def rewrite(state):
     print("---TRANSFORM QUERY---")
     messages = state["messages"]
+    # Use only the most recent messages for LLM context
+    recent_messages = get_recent_messages(messages)
 
     # Find the most recent user query
     question = None
-    for msg in reversed(messages):
+    for msg in reversed(recent_messages):
         if isinstance(msg, HumanMessage):
             question = msg.content
             break
@@ -236,12 +279,13 @@ def rewrite(state):
 
 def generate(state):
     print("---GENERATE---")
-    # Use the most recent user message as the question instead of always the first message
     messages = state["messages"]
+    # Use only the most recent messages for LLM context
+    recent_messages = get_recent_messages(messages)
 
     # Find the most recent user query - it's generally the last HumanMessage
     question = None
-    for msg in reversed(messages):
+    for msg in reversed(recent_messages):
         if isinstance(msg, HumanMessage):
             question = msg.content
             break
@@ -264,9 +308,8 @@ def generate(state):
                 source.add(f"{title}: {url}")
         return "\n".join(sorted(source)) if source else "No sources found."
 
-    prompt = hub.pull("rlm/rag-prompt")
     llm = azure_gpt4o(temperature=0, streaming=False)
-    rag_chain = prompt | llm | StrOutputParser()
+    rag_chain = base_prompt | llm | StrOutputParser()
 
     response = rag_chain.invoke({"context": format_docs(docs), "question": question})
     cited_sources = collect_sources(docs)
@@ -278,7 +321,7 @@ def generate(state):
 
 # ========== BUILD GRAPH ===========
 print("****************** Prompt[rlm/rag-prompt] ******************")
-hub.pull("rlm/rag-prompt").pretty_print()
+base_prompt.pretty_print()
 
 workflow = StateGraph(AgentState)
 workflow.add_node("agent", agent)
@@ -344,24 +387,3 @@ def run_graph_with_memory(user_id: str, user_query: str):
 
     # Invoke the graph - memory handling is automatic with the checkpointer
     return graph.invoke(initial_state, config)
-
-
-# Save mermaid diagram
-image_data = graph.get_graph().draw_mermaid_png()
-with open("agentic_graph_new.png", "wb") as f:
-    f.write(image_data)
-
-
-# create image of nodes
-# import pprint
-# inputs = {
-#     "messages": [
-#         ("user", "What does the government say about AI and ethics, specifically on transparency?"),
-#     ]
-# }
-# for output in graph.stream(inputs):
-#     for key, value in output.items():
-#         pprint.pprint(f"Output from node '{key}':")
-#         pprint.pprint("---")
-#         pprint.pprint(value, indent=2, width=80, depth=None)
-#     pprint.pprint("\n---\n")
