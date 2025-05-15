@@ -57,7 +57,7 @@ def debug_tools_condition(state):
 
     # Check if it's a question
     is_question = user_query.strip().endswith("?") or any(
-        user_query.strip().startsWith(qs + " ") for qs in question_starters
+        user_query.strip().startswith(qs + " ") for qs in question_starters
     )
 
     # Only trigger retrieval if BOTH a keyword and a question are present
@@ -163,14 +163,14 @@ Summary:""",
 def agent(state):
     print("---CALL AGENT---")
     messages = state["messages"]
-    system_msg = HumanMessage(
-        content="""You are a helpful assistant.
-You have access to a specialized knowledge base about UK farming grants.
-You MUST use the `gov_knowledge_base` tool for any question related to farming, farming grants, agricultural funding, rural support schemes, or similar topics.
-Do NOT attempt to answer on your own for these topics — always use the `gov_knowledge_base` tool to ensure accuracy based on the provided documents.
-For other general queries, you can answer directly or use other tools if appropriate.
+    system_msg = SystemMessage(
+        content="""
+You are an expert assistant helping users ONLY with questions about UK farming grants, agricultural funding, and related topics. You MUST NOT answer questions outside these topics. If the user's question is not related to these topics, politely respond: 'Sorry, I can only assist with farming grants, funding, and related topics.'
 
-You should remember and use all information the user shares with you during the conversation, including their name, preferences, goals, and any facts or context discussed. If the user asks you to recall or summarize what has been discussed so far, look back through the conversation and answer accordingly.""",
+You have access to a specialized knowledge base about UK farming grants. You MUST use the `gov_knowledge_base` tool for any question related to farming, farming grants, agricultural funding, rural support schemes, or similar topics. Do NOT attempt to answer on your own for these topics — always use the `gov_knowledge_base` tool to ensure accuracy based on the provided documents.
+
+You should remember and use all information the user shares with you during the conversation, including their name, preferences, goals, and any facts or context discussed. If the user asks you to recall or summarize what has been discussed so far, look back through the conversation and answer accordingly.
+""",
         name="system",
     )
 
@@ -296,6 +296,16 @@ def generate(state):
 
     docs = state.get("docs", [])
 
+    # If no relevant docs, refuse to answer
+    if not docs or len(docs) == 0:
+        return {
+            "messages": [
+                AIMessage(
+                    content="Sorry, I can only assist with farming grants, funding, and related topics. If you have a question about those, please ask!"
+                )
+            ]
+        }
+
     def format_docs(docs):
         return "\n\n".join(doc.page_content for doc in docs)
 
@@ -306,14 +316,20 @@ def generate(state):
             title = doc.metadata.get("title", "Unknown Title")
             if url:
                 source.add(f"{title}: {url}")
-        return "\n".join(sorted(source)) if source else "No sources found."
+        return "\n".join(sorted(source)) if source else ""
 
     llm = azure_gpt4o(temperature=0, streaming=False)
     rag_chain = base_prompt | llm | StrOutputParser()
 
     response = rag_chain.invoke({"context": format_docs(docs), "question": question})
     cited_sources = collect_sources(docs)
-    full_response = f"{response}\n\nSources:\n{cited_sources}"
+    # Only show sources if there is a substantive answer
+    if response.strip().lower().startswith("sorry") or not response.strip():
+        full_response = response.strip()
+    else:
+        full_response = (
+            f"{response}\n\nSources:\n{cited_sources}" if cited_sources else response
+        )
 
     # Return the new message as an AIMessage object in a list
     return {"messages": [AIMessage(content=full_response)]}
@@ -360,30 +376,52 @@ def run_graph_with_memory(user_id: str, user_query: str):
 
     The checkpointer (MemorySaver) automatically handles loading prior state
     and saving the new state after execution.
+    Now includes robust error handling to preserve conversation state even on error.
     """
-    from langchain_core.messages import HumanMessage
+    from langchain_core.messages import HumanMessage, SystemMessage
 
-    # Prepare the config with thread_id for memory persistence
     config = {"configurable": {"thread_id": user_id}}
-
-    # Get current state from memory, if any exists
-    current_state = graph.get_state(config=config)
-
-    # If no state exists, initialize with just the new query
-    if not current_state or "messages" not in current_state:
-        print(f"No existing state found for user {user_id}, creating fresh state")
-        initial_state = {"messages": [HumanMessage(content=user_query)]}
-    else:
-        # Otherwise, append the new message to existing conversation history
-        print(
-            f"Found existing state for user {user_id} with {len(current_state.get('messages', []))} messages"
+    try:
+        current_state = graph.get_state(config=config)
+        if not current_state or "messages" not in current_state:
+            print(f"No existing state found for user {user_id}, creating fresh state")
+            initial_state = {"messages": [HumanMessage(content=user_query)]}
+        else:
+            print(
+                f"Found existing state for user {user_id} with {len(current_state.get('messages', []))} messages"
+            )
+            initial_state = dict(current_state)
+            # Only add the new message if it's not a duplicate of the last message
+            if (
+                not initial_state["messages"]
+                or initial_state["messages"][-1].content != user_query
+            ):
+                initial_state["messages"] = list(initial_state["messages"]) + [
+                    HumanMessage(content=user_query)
+                ]
+        return graph.invoke(initial_state, config)
+    except Exception as e:
+        # On error, append a system message to the conversation
+        print(f"Error in run_graph_with_memory: {e}")
+        error_message = SystemMessage(
+            content=f"An error occurred: {str(e)}. Your previous conversation is saved. Please try again."
         )
-        # Create a copy to avoid modifying the original
-        initial_state = dict(current_state)
-        # Add the new user message to existing conversation
-        initial_state["messages"] = list(initial_state["messages"]) + [
-            HumanMessage(content=user_query)
-        ]
-
-    # Invoke the graph - memory handling is automatic with the checkpointer
-    return graph.invoke(initial_state, config)
+        # Try to append error message to the last known state
+        try:
+            if "initial_state" in locals():
+                initial_state["messages"].append(error_message)
+            elif (
+                "current_state" in locals()
+                and current_state
+                and "messages" in current_state
+            ):
+                current_state["messages"].append(error_message)
+            else:
+                # If all else fails, create a minimal state
+                fallback_state = {
+                    "messages": [HumanMessage(content=user_query), error_message]
+                }
+        except Exception as persist_error:
+            print(f"Failed to update error state: {persist_error}")
+        # Optionally, re-raise or return a fallback response
+        raise
