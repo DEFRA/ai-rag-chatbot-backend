@@ -94,3 +94,34 @@ if retriever is None:
     print(
         "`retriever` is None. Agentic graph queries to the vector store will likely fail or use no context."
     )
+
+
+def reload_vector_store():
+    global vector_store_grants, retriever
+    grants_vectorstore_path = "./chroma_db_grants"
+    collection_name = "rag-chroma"
+    try:
+        embedding_model = AzureOpenAIEmbeddings(
+            model="text-embedding-3-small",
+            azure_deployment="text-embedding-3-small",
+            azure_endpoint=configs.AZURE_OPENAI_ENDPOINT,
+            api_key=configs.AZURE_OPENAI_API_KEY,
+            api_version=configs.AZURE_API_VERSION,
+        )
+        vector_store_grants = Chroma(
+            persist_directory=grants_vectorstore_path,
+            embedding_function=embedding_model,
+            collection_name=collection_name,
+        )
+        if vector_store_grants._collection.count() > 0:
+            retriever = vector_store_grants.as_retriever()
+            print(
+                f"[reload_vector_store] Retriever reloaded with {vector_store_grants._collection.count()} documents."
+            )
+        else:
+            retriever = None
+            print("[reload_vector_store] Vector store exists but collection is empty.")
+    except Exception as e:
+        print(f"[reload_vector_store] Error during reload: {e}")
+        vector_store_grants = None
+        retriever = None

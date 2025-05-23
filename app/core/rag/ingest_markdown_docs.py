@@ -1,7 +1,8 @@
 import json
+import os
 import time
 
-from langchain.schema.document import Document
+from langchain_core.documents import Document
 from langchain_text_splitters import RecursiveCharacterTextSplitter
 
 # Import the pre-configured vector store and its path from vector_store.py
@@ -128,4 +129,23 @@ def load_to_vectorstore():
     print("--- Ingestion Process Finished ---")
 
 
+def ingest_uploaded_file(file_path):
+    """Ingest a single uploaded file (markdown, txt, or pdf) into the vector store."""
+    ext = os.path.splitext(file_path)[1].lower()
+    if ext not in [".md", ".txt"]:
+        msg = "Only .md and .txt files are supported for ingestion."
+        raise ValueError(msg)
+    with open(file_path, encoding="utf-8") as f:
+        content = f.read()
+    metadata = {"filename": os.path.basename(file_path)}
+    doc = Document(page_content=content, metadata=metadata)
+    doc_splits = split_documents([doc])
+    ingest_to_vectorstore(doc_splits)
+    print(f"Uploaded file {file_path} ingested successfully.")
+
+
+# Initial load from the processed JSON
 load_to_vectorstore()
+
+# Example usage of ingest_uploaded_file:
+# ingest_uploaded_file("path/to/your/uploaded_file.md")
