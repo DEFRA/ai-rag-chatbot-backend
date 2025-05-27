@@ -4,6 +4,7 @@ from contextlib import asynccontextmanager
 
 from fastapi import FastAPI
 
+from app.cdp_uploader.router import router as cdp_uploader_router
 from app.chat.router import router as chat_router
 from app.common.mongo import get_mongo_client
 from app.common.tracing import TraceIdMiddleware
@@ -42,6 +43,7 @@ app.add_middleware(TraceIdMiddleware)
 app.include_router(health_router)
 app.include_router(example_router)
 app.include_router(chat_router)
+app.include_router(cdp_uploader_router)
 
 logger.info("Application startup complete with query endpoint.")
 
