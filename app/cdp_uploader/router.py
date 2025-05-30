@@ -19,12 +19,13 @@ async def uploader_callback(request: Request):
     """
     data = await request.json()
     form = data.get("form", {})
-    files = [
-        v
-        for v in form.values()
-        if isinstance(v, dict) and v.get("fileStatus") == "complete"
-    ]
-    if not files:
+    # Extract completed files from the callback form
+    completed_files = []
+    for value in form.values():
+        if isinstance(value, dict) and value.get("fileStatus") == "complete":
+            completed_files.append(value)
+
+    if not completed_files:
         raise HTTPException(status_code=400, detail="No completed files in callback.")
 
     # S3 config for LocalStack
@@ -36,7 +37,7 @@ async def uploader_callback(request: Request):
         region_name=os.environ.get("AWS_REGION", "eu-west-2"),
     )
 
-    for file_info in files:
+    for file_info in completed_files:
         bucket = file_info["s3Bucket"]
         key = file_info["s3Key"]
         # Download file to temp location
@@ -52,4 +53,4 @@ async def uploader_callback(request: Request):
         if vector_store_grants:
             vector_store_grants.add_documents(doc_splits)
         os.remove(tmp_path)
-    return {"status": "success", "files_ingested": len(files)}
+    return {"status": "success", "files_ingested": len(completed_files)}
