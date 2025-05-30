@@ -178,3 +178,6 @@ compose/secrets.env
 
 # Files generated during ingestions
 farming_grants_processed.json
+
+
+.DS_Store

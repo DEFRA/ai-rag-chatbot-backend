@@ -1,10 +1,10 @@
 import json
 from typing import Literal
 
-from langchain import hub
-from langchain_core.messages import AIMessage, HumanMessage, ToolMessage
+from langchain_core.messages import AIMessage, HumanMessage, SystemMessage, ToolMessage
 from langchain_core.output_parsers import StrOutputParser
 from langchain_core.prompts import PromptTemplate
+from langgraph.checkpoint.memory import MemorySaver
 from langgraph.graph import END, START, StateGraph
 from langgraph.prebuilt import tools_condition
 
@@ -12,10 +12,20 @@ from app.clients.azure_openai_config import azure_gpt4o
 from app.core.agents.agent_state import AgentState
 from app.core.agents.agent_tools import tools
 from app.core.rag.vector_store import retriever
+from app.util.prompts import base_prompt
 
 
 def debug_tools_condition(state):
-    user_query = state["messages"][0].content.lower()
+    # Find the most recent user query
+    user_query = None
+    messages = state["messages"]
+    for msg in reversed(messages):
+        if isinstance(msg, HumanMessage):
+            user_query = msg.content.lower()
+            break
+    if user_query is None and messages:
+        user_query = messages[0].content.lower()
+
     farming_grant_keywords = [
         "farm",
         "farming",
@@ -28,13 +38,38 @@ def debug_tools_condition(state):
         "funding",
         "support scheme",
     ]
-    result = tools_condition(state)
-    print(f"TOOL CONDITION OUTPUT FROM LLM: {result}")
-    if any(keyword in user_query for keyword in farming_grant_keywords):
+    question_starters = [
+        "what",
+        "how",
+        "which",
+        "when",
+        "where",
+        "who",
+        "does",
+        "do",
+        "can",
+        "is",
+        "are",
+        "should",
+        "could",
+        "would",
+    ]
+
+    # Check if it's a question
+    is_question = user_query.strip().endswith("?") or any(
+        user_query.strip().startswith(qs + " ") for qs in question_starters
+    )
+
+    # Only trigger retrieval if BOTH a keyword and a question are present
+    if is_question and any(keyword in user_query for keyword in farming_grant_keywords):
         print(
-            "Detected farming grant-related keyword and no retrieval yet — forcing retriever tool."
+            "Detected farming grant-related keyword in a question — forcing retriever tool."
         )
         return "tools"
+
+    # Otherwise, use the LLM's own tool condition logic
+    result = tools_condition(state)
+    print(f"TOOL CONDITION OUTPUT FROM LLM: {result}")
     return result
 
 
@@ -59,7 +94,18 @@ def check_document_relevance(state) -> Literal["generate", "rewrite"]:
 
     messages = state["messages"]
     last_message = messages[-1]
-    question = messages[0].content
+
+    # Find the most recent user query - look through messages in reverse
+    question = None
+    for msg in reversed(messages):
+        if isinstance(msg, HumanMessage):
+            question = msg.content
+            break
+
+    # Fallback to first message if no HumanMessage found
+    if question is None and messages:
+        question = messages[0].content
+
     docs = last_message.content
 
     raw_output = chain.invoke({"question": question, "context": docs})
@@ -76,22 +122,65 @@ def check_document_relevance(state) -> Literal["generate", "rewrite"]:
     return "rewrite"
 
 
+# Utility: Limit conversation history for LLM context window
+MAX_CONTEXT_MESSAGES = 10  # Adjust as needed for your LLM's context window
+
+# Summarize older messages if conversation is too long
+
+
+def get_recent_messages(messages, max_messages=MAX_CONTEXT_MESSAGES):
+    """
+    Returns the most recent max_messages from the conversation history.
+    If there are more messages, older ones are summarized into a single message.
+    """
+    if len(messages) <= max_messages:
+        return messages
+    # Summarize older messages
+    older_messages = messages[:-max_messages]
+    recent_messages = messages[-max_messages:]
+
+    # Prepare a summary prompt
+    summary_prompt = PromptTemplate(
+        template="""
+You are an assistant helping to summarize a conversation for context recall. Summarize the following conversation history in a concise way, preserving key facts, user preferences, and important context. Do not invent information.
+
+Conversation history:
+{history}
+
+Summary:""",
+        input_variables=["history"],
+    )
+    # Format the older messages as a string
+    history_text = "\n".join(f"{msg.type}: {msg.content}" for msg in older_messages)
+    model = azure_gpt4o(temperature=0, streaming=False)
+    chain = summary_prompt | model | StrOutputParser()
+    summary = chain.invoke({"history": history_text})
+    # Return a SystemMessage with the summary, plus the recent messages
+    summary_message = SystemMessage(content=f"Conversation summary: {summary}")
+    return [summary_message] + recent_messages
+
+
 def agent(state):
     print("---CALL AGENT---")
     messages = state["messages"]
-    system_msg = HumanMessage(
-        content="""You are a helpful assistant.
-You have access to a specialized knowledge base about UK farming grants.
-You MUST use the `gov_knowledge_base` tool for any question related to farming, farming grants, agricultural funding, rural support schemes, or similar topics.
-Do NOT attempt to answer on your own for these topics — always use the `gov_knowledge_base` tool to ensure accuracy based on the provided documents.
-For other general queries, you can answer directly or use other tools if appropriate.""",
+    system_msg = SystemMessage(
+        content="""
+You are an expert assistant helping users ONLY with questions about UK farming grants, agricultural funding, and related topics. You MUST NOT answer questions outside these topics. If the user's question is not related to these topics, politely respond: 'Sorry, I can only assist with farming grants, funding, and related topics.'
+
+You have access to a specialized knowledge base about UK farming grants. You MUST use the `gov_knowledge_base` tool for any question related to farming, farming grants, agricultural funding, rural support schemes, or similar topics. Do NOT attempt to answer on your own for these topics — always use the `gov_knowledge_base` tool to ensure accuracy based on the provided documents.
+
+You should remember and use all information the user shares with you during the conversation, including their name, preferences, goals, and any facts or context discussed. If the user asks you to recall or summarize what has been discussed so far, look back through the conversation and answer accordingly.
+""",
         name="system",
     )
+
+    # Use only the most recent messages for LLM context
+    recent_messages = get_recent_messages(messages)
 
     model = azure_gpt4o(temperature=0, streaming=False)
     model = model.bind_tools(tools)
 
-    response = model.invoke([system_msg] + messages)
+    response = model.invoke([system_msg] + recent_messages)
     tool_calls = response.additional_kwargs.get("tool_calls", [])
 
     # Prepare the list of new messages to add
@@ -157,7 +246,19 @@ def retrieve_and_store(state):
 def rewrite(state):
     print("---TRANSFORM QUERY---")
     messages = state["messages"]
-    question = messages[0].content
+    # Use only the most recent messages for LLM context
+    recent_messages = get_recent_messages(messages)
+
+    # Find the most recent user query
+    question = None
+    for msg in reversed(recent_messages):
+        if isinstance(msg, HumanMessage):
+            question = msg.content
+            break
+
+    # Fallback to the first message if no human message found
+    if question is None and messages:
+        question = messages[0].content
 
     msg = [
         HumanMessage(
@@ -178,8 +279,32 @@ def rewrite(state):
 
 def generate(state):
     print("---GENERATE---")
-    question = state["messages"][0].content
+    messages = state["messages"]
+    # Use only the most recent messages for LLM context
+    recent_messages = get_recent_messages(messages)
+
+    # Find the most recent user query - it's generally the last HumanMessage
+    question = None
+    for msg in reversed(recent_messages):
+        if isinstance(msg, HumanMessage):
+            question = msg.content
+            break
+
+    # Fallback to the first message if we couldn't find a HumanMessage
+    if question is None and messages:
+        question = messages[0].content
+
     docs = state.get("docs", [])
+
+    # If no relevant docs, refuse to answer
+    if not docs or len(docs) == 0:
+        return {
+            "messages": [
+                AIMessage(
+                    content="Sorry, I can only assist with farming grants, funding, and related topics. If you have a question about those, please ask!"
+                )
+            ]
+        }
 
     def format_docs(docs):
         return "\n\n".join(doc.page_content for doc in docs)
@@ -191,15 +316,20 @@ def generate(state):
             title = doc.metadata.get("title", "Unknown Title")
             if url:
                 source.add(f"{title}: {url}")
-        return "\n".join(sorted(source)) if source else "No sources found."
+        return "\n".join(sorted(source)) if source else ""
 
-    prompt = hub.pull("rlm/rag-prompt")
     llm = azure_gpt4o(temperature=0, streaming=False)
-    rag_chain = prompt | llm | StrOutputParser()
+    rag_chain = base_prompt | llm | StrOutputParser()
 
     response = rag_chain.invoke({"context": format_docs(docs), "question": question})
     cited_sources = collect_sources(docs)
-    full_response = f"{response}\n\nSources:\n{cited_sources}"
+    # Only show sources if there is a substantive answer
+    if response.strip().lower().startswith("sorry") or not response.strip():
+        full_response = response.strip()
+    else:
+        full_response = (
+            f"{response}\n\nSources:\n{cited_sources}" if cited_sources else response
+        )
 
     # Return the new message as an AIMessage object in a list
     return {"messages": [AIMessage(content=full_response)]}
@@ -207,7 +337,7 @@ def generate(state):
 
 # ========== BUILD GRAPH ===========
 print("****************** Prompt[rlm/rag-prompt] ******************")
-hub.pull("rlm/rag-prompt").pretty_print()
+base_prompt.pretty_print()
 
 workflow = StateGraph(AgentState)
 workflow.add_node("agent", agent)
@@ -232,25 +362,66 @@ workflow.add_conditional_edges(
 workflow.add_edge("generate", END)
 workflow.add_edge("rewrite", "agent")
 
-# Compile graph
-graph = workflow.compile()
+# --- MemorySaver integration ---
+# Initialize MemorySaver (default: in-memory storage)
+memory = MemorySaver()
 
-# Save mermaid diagram
-image_data = graph.get_graph().draw_mermaid_png()
-with open("agentic_graph_new.png", "wb") as f:
-    f.write(image_data)
+# Compile graph with memory checkpointer
+graph = workflow.compile(checkpointer=memory)
 
 
-# create image of nodes
-# import pprint
-# inputs = {
-#     "messages": [
-#         ("user", "What does the government say about AI and ethics, specifically on transparency?"),
-#     ]
-# }
-# for output in graph.stream(inputs):
-#     for key, value in output.items():
-#         pprint.pprint(f"Output from node '{key}':")
-#         pprint.pprint("---")
-#         pprint.pprint(value, indent=2, width=80, depth=None)
-#     pprint.pprint("\n---\n")
+def run_graph_with_memory(user_id: str, user_query: str):
+    """
+    Runs the graph with memory persistence for the given user.
+
+    The checkpointer (MemorySaver) automatically handles loading prior state
+    and saving the new state after execution.
+    Now includes robust error handling to preserve conversation state even on error.
+    """
+    from langchain_core.messages import HumanMessage, SystemMessage
+
+    config = {"configurable": {"thread_id": user_id}}
+    try:
+        current_state = graph.get_state(config=config)
+        if not current_state or "messages" not in current_state:
+            print(f"No existing state found for user {user_id}, creating fresh state")
+            initial_state = {"messages": [HumanMessage(content=user_query)]}
+        else:
+            print(
+                f"Found existing state for user {user_id} with {len(current_state.get('messages', []))} messages"
+            )
+            initial_state = dict(current_state)
+            # Only add the new message if it's not a duplicate of the last message
+            if (
+                not initial_state["messages"]
+                or initial_state["messages"][-1].content != user_query
+            ):
+                initial_state["messages"] = list(initial_state["messages"]) + [
+                    HumanMessage(content=user_query)
+                ]
+        return graph.invoke(initial_state, config)
+    except Exception as e:
+        # On error, append a system message to the conversation
+        print(f"Error in run_graph_with_memory: {e}")
+        error_message = SystemMessage(
+            content=f"An error occurred: {str(e)}. Your previous conversation is saved. Please try again."
+        )
+        # Try to append error message to the last known state
+        try:
+            if "initial_state" in locals():
+                initial_state["messages"].append(error_message)
+            elif (
+                "current_state" in locals()
+                and current_state
+                and "messages" in current_state
+            ):
+                current_state["messages"].append(error_message)
+            else:
+                # If all else fails, create a minimal state
+                fallback_state = {
+                    "messages": [HumanMessage(content=user_query), error_message]
+                }
+        except Exception as persist_error:
+            print(f"Failed to update error state: {persist_error}")
+        # Optionally, re-raise or return a fallback response
+        raise

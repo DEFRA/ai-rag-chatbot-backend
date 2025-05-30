@@ -1,10 +1,11 @@
 import logging
 
 from fastapi import APIRouter, HTTPException
-from langchain_core.messages import HumanMessage
 
 from app.chat.models import QueryRequest, QueryResponse
-from app.core.agents.agentic_graph import graph
+from app.core.agents.agentic_graph import (
+    run_graph_with_memory,  # Uses persistent memory
+)
 
 logger = logging.getLogger(__name__)
 
@@ -12,18 +13,31 @@ logger = logging.getLogger(__name__)
 router = APIRouter(prefix="/query", tags=["Query"])
 
 
-async def get_agent_final_response(user_query: str) -> str:
-    """Invokes the agent graph and extracts the final response."""
+async def get_agent_final_response(
+    user_query: str, user_id: str = "default_user"
+) -> str:
+    """
+    Invokes the agent graph with persistent memory and extracts the final response.
+
+    Memory Feature:
+    - Uses MemorySaver to persist conversation state per user/session.
+    - Each user_id gets a separate memory stream, allowing multi-turn context retention.
+    - To enable multi-user memory, pass a unique user_id for each session/user.
+    """
     logger.info("Received query for agent processing: '%s'", user_query)
-    # Initial state for the graph, ensuring correct message format
-    initial_state = {"messages": [HumanMessage(content=user_query)]}
     final_answer = (
         "Sorry, I encountered an issue processing your query."  # Default error message
     )
 
     try:
-        # Use ainvoke for a single, complete result
-        final_state = await graph.ainvoke(initial_state)
+        # Use run_graph_with_memory for persistent memory
+        # NOTE: run_graph_with_memory is synchronous, so run in thread executor
+        import asyncio
+
+        loop = asyncio.get_running_loop()
+        final_state = await loop.run_in_executor(
+            None, run_graph_with_memory, user_id, user_query
+        )
 
         # --- Extract the final response ---
         if final_state and "messages" in final_state and final_state["messages"]:
@@ -68,6 +82,13 @@ async def handle_query(request: QueryRequest):
     """
     Accepts a user query via POST request (JSON body) and returns
     the agent's final response.
+
+    Memory Feature:
+    - The agent now remembers previous messages for each user/session.
+    - Uses the user_id provided in the request for per-user memory.
     """
-    final_answer = await get_agent_final_response(request.query)
+    # Use the user_id from the request (defaults to "default_user" if not provided)
+    final_answer = await get_agent_final_response(
+        request.query, user_id=request.user_id
+    )
     return QueryResponse(answer=final_answer)
