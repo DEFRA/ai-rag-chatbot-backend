@@ -2,8 +2,9 @@ import logging
 
 from fastapi import APIRouter, HTTPException
 
-from app.chat.models import QueryRequest, QueryResponse
+from app.chat.models import QueryRequest, QueryResponse, ResetRequest
 from app.core.agents.agentic_graph import (
+    reset_user_memory,  # New: for resetting user memory
     run_graph_with_memory,  # Uses persistent memory
 )
 
@@ -92,3 +93,16 @@ async def handle_query(request: QueryRequest):
         request.query, user_id=request.user_id
     )
     return QueryResponse(answer=final_answer)
+
+
+# Define the POST endpoint for resetting chat memory
+@router.post("/reset")
+async def reset_chat_memory(request: ResetRequest):
+    """
+    Resets the chat memory for the given user/session.
+    """
+    user_id = request.user_id or "default_user"
+    success = reset_user_memory(user_id)
+    if not success:
+        raise HTTPException(status_code=500, detail="Failed to reset chat memory.")
+    return {"success": True, "message": f"Chat memory reset for user_id: {user_id}"}
