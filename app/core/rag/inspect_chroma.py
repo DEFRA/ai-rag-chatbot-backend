@@ -1,12 +1,13 @@
 from langchain_chroma import Chroma
 
+from app.core.rag.vector_store import embedding_model
+
 # Path to vector store
-VECTOR_STORE_PATH = "./chroma_db_grants"
 COLLECTION_NAME = "rag-chroma"
 
 # Load the vector store
 vector_store = Chroma(
-    persist_directory=VECTOR_STORE_PATH, collection_name=COLLECTION_NAME
+    embedding_function=embedding_model, collection_name=COLLECTION_NAME
 )
 
 # Get all documents in the vector store

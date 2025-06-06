@@ -5,7 +5,7 @@ from langchain.schema.document import Document
 from langchain_text_splitters import RecursiveCharacterTextSplitter
 
 # Import the pre-configured vector store and its path from vector_store.py
-from app.core.rag.vector_store import GRANTS_VECTORSTORE_PATH, vector_store_grants
+from app.core.rag.vector_store import vector_store_grants
 
 # --- Configuration ---
 PROCESSED_JSON_PATH = "farming_grants_processed.json"  # Path to the JSON file from data_ingest_via_search_apiv2.py
@@ -84,9 +84,7 @@ def ingest_to_vectorstore(doc_splits, batch_size=50, max_retries=3, backoff=60):
         )
         return
 
-    print(
-        f"Using pre-configured Chroma vector store for grants at {GRANTS_VECTORSTORE_PATH}."
-    )
+    print("Using in memory vector store for grants.")
 
     print(f"Adding {len(doc_splits)} document chunks to the vector store...")
     try:
@@ -114,7 +112,9 @@ def ingest_to_vectorstore(doc_splits, batch_size=50, max_retries=3, backoff=60):
                 print(
                     f"Failed to add batch {i // batch_size + 1} after {max_retries} retries. Skipping..."
                 )
-        print("Ingestion complete. Documents added to vector store (auto-persisted)")
+        print(
+            "Ingestion complete. Documents added to in memory vector store (not persisted)."
+        )
     except Exception as e:
         print(f"An error occurred during vector store ingestion: {e}")
 
