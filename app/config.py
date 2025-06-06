@@ -11,6 +11,7 @@ class AppConfig(BaseSettings):
     mongo_database: str = "ai-rag-chatbot-backend"
     mongo_truststore: str = "TRUSTSTORE_CDP_ROOT_CA"
     http_proxy: Optional[HttpUrl] = None
+    https_proxy: Optional[HttpUrl] = None
     enable_metrics: bool = False
     tracing_header: str = "x-cdp-request-id"
 
