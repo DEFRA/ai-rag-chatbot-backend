@@ -4,7 +4,7 @@ import time
 import httpx
 from markitdown.converters._html_converter import HtmlConverter
 
-from app.core import config
+from app import config
 
 # --- Configuration ---
 SEARCH_API_URL = "https://www.gov.uk/api/search.json"
