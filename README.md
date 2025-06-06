@@ -195,6 +195,11 @@ To enable the chatbot to answer questions based on specific documents (e.g., far
         "query": "could you tell me more about the eligibility criteria please, for the herbal leys"
     }'
     ```
+ 4. Check content in vector store
+
+ ```bash
+    docker compose exec backend-service python -m app.core.rag.inspect_chroma
+```
 
 ### Testing
 

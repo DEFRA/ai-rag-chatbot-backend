@@ -277,6 +277,20 @@ def rewrite(state):
     return {"messages": [response]}
 
 
+def format_docs(docs):
+    return "\n\n".join(doc.page_content for doc in docs)
+
+
+def collect_sources(docs):
+    source = set()
+    for doc in docs:
+        url = doc.metadata.get("url")
+        title = doc.metadata.get("title", "Unknown Title")
+        if url:
+            source.add(f"{title}: {url}")
+    return "\n".join(sorted(source)) if source else ""
+
+
 def generate(state):
     print("---GENERATE---")
     messages = state["messages"]
@@ -305,18 +319,6 @@ def generate(state):
                 )
             ]
         }
-
-    def format_docs(docs):
-        return "\n\n".join(doc.page_content for doc in docs)
-
-    def collect_sources(docs):
-        source = set()
-        for doc in docs:
-            url = doc.metadata.get("url")
-            title = doc.metadata.get("title", "Unknown Title")
-            if url:
-                source.add(f"{title}: {url}")
-        return "\n".join(sorted(source)) if source else ""
 
     llm = azure_gpt4o(temperature=0, streaming=False)
     rag_chain = base_prompt | llm | StrOutputParser()
