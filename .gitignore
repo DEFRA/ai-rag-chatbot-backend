@@ -177,7 +177,6 @@ compose/secrets.env
 .vscode/
 
 # Files generated during ingestions
-farming_grants_processed.json
 chroma_db_grants
 
 

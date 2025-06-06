@@ -1,10 +1,10 @@
-from app.core.rag.download_farming_grants import fetch_and_convert_grant_data
+# from app.core.rag.download_farming_grants import fetch_and_convert_grant_data
 from app.core.rag.ingest_markdown_docs import load_to_vectorstore
 
 
 def main():
-    print("Fetching and converting farming grants data...")
-    fetch_and_convert_grant_data()
+    # print("Fetching and converting farming grants data...")
+    # fetch_and_convert_grant_data()
     print("Loading processed data into vector store...")
     load_to_vectorstore()
 
