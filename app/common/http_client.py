@@ -25,8 +25,8 @@ def hook_request_tracing(request):
 # service boundaries as well as adding in request/response logging.
 def async_client():
     proxy_mounts = {
-        "http://": httpx.HTTPTransport(config.http_proxy),
-        "https://": httpx.HTTPTransport(config.https_proxy),
+        "http://": httpx.HTTPTransport(config.cdp_http_proxy),
+        "https://": httpx.HTTPTransport(config.cdp_https_proxy),
     }
     return httpx.AsyncClient(
         event_hooks={"request": [async_hook_request_tracing]}, mounts=proxy_mounts
@@ -35,8 +35,8 @@ def async_client():
 
 def client():
     proxy_mounts = {
-        "http://": httpx.HTTPTransport(config.http_proxy),
-        "https://": httpx.HTTPTransport(config.https_proxy),
+        "http://": httpx.HTTPTransport(config.cdp_http_proxy),
+        "https://": httpx.HTTPTransport(config.cdp_https_proxy),
     }
     return httpx.Client(
         event_hooks={"request": [hook_request_tracing]}, mounts=proxy_mounts
