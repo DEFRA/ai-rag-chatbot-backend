@@ -4,6 +4,8 @@ import time
 import httpx
 from markitdown.converters._html_converter import HtmlConverter
 
+from app.core import config
+
 # --- Configuration ---
 SEARCH_API_URL = "https://www.gov.uk/api/search.json"
 CONTENT_API_BASE_URL = "https://www.gov.uk/api/content"  # Base URL for content API
@@ -36,7 +38,11 @@ def fetch_farming_grant_content():
     search_response = None  # Initialize to None for error handling avoid unbound local error, if get request fails
     try:
         search_response = httpx.get(
-            SEARCH_API_URL, params=SEARCH_PARAMS, headers=HEADERS, timeout=30
+            SEARCH_API_URL,
+            params=SEARCH_PARAMS,
+            headers=HEADERS,
+            timeout=30,
+            proxies=config.http_proxy,
         )
         search_response.raise_for_status()  # Raise an exception for bad status codes (4xx or 5xx)
         search_data = search_response.json()  # Parse the JSON response
@@ -191,7 +197,9 @@ def fetch_content_for_items(results):
             # Add a small delay
             time.sleep(DELAY_BETWEEN_REQUESTS)
 
-            content_response = httpx.get(content_url, headers=HEADERS, timeout=30)
+            content_response = httpx.get(
+                content_url, headers=HEADERS, timeout=30, proxies=config.http_proxy
+            )
             content_response.raise_for_status()  # Check for HTTP errors for this specific item
             content_data = content_response.json()
 
