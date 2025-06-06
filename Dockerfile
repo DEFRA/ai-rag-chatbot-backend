@@ -17,7 +17,7 @@ ENV UVICORN_PORT=8085
 
 # Add curl to template.
 # CDP PLATFORM HEALTHCHECK REQUIREMENT
-RUN apt-get update && apt-get install curl -y
+RUN apt-get update && apt-get install curl -y gcc g++
 
 WORKDIR /app
 

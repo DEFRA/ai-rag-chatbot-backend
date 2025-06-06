@@ -427,3 +427,16 @@ def run_graph_with_memory(user_id: str, user_query: str):
             print(f"Failed to update error state: {persist_error}")
         # Optionally, re-raise or return a fallback response
         raise
+
+
+def reset_user_memory(user_id: str):
+    """
+    Deletes the memory/checkpoint for the given user/session (thread_id).
+    Returns True if successful, False otherwise.
+    """
+    try:
+        memory.delete_thread(user_id)
+        return True
+    except Exception as e:
+        print(f"Failed to reset memory for user {user_id}: {e} ({type(e)})")
+        return False
